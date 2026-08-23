@@ -36,13 +36,28 @@ public class GreetingFlow
            
             if (shouldShow)
             {
-                var imageUrls = await _offers.GetActiveImageUrlsAsync();
-                if (imageUrls.Count > 0)
+                var activeOffers = await _offers.GetActiveOffersAsync();
+                if (activeOffers.Count > 0)
                 {
-                    await _whatsApp.SendImagesAsync(to, imageUrls);
+                    // First offer in display order supplies the intro text via its caption.
+                    var introText = activeOffers[0].Caption;
+                    if (!string.IsNullOrWhiteSpace(introText))
+                    {
+                        await _whatsApp.SendTextAsync(to, introText);
+                    }
+
+                    await _whatsApp.SendImagesAsync(to, activeOffers.Select(o => o.ImageUrl));
                     await _customers.MarkOfferImagesShownAsync(customerId);
                 }
             }
+        }
+
+        var shoppingEnabled = _config.GetValue<bool?>("Features:ShoppingEnabled") ?? true;
+        if (!shoppingEnabled)
+        {
+            // Images-only mode: no menu, no state change — leave the
+            // conversation exactly as it was.
+            return;
         }
 
         await _whatsApp.SendButtonsAsync(to, "\ud83d\udc4b Welcome to Fresh Mart! What would you like to do?", new List<WhatsAppButton>

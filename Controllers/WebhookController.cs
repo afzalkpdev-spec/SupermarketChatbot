@@ -327,7 +327,9 @@ public class WebhookController : ControllerBase
         // ---- Free-text that isn't a recognized command: treat as a product search ----
         // This must come after all button/list handling above (selectedId is always
         // null for typed text, so it won't intercept any interactive replies).
-        if (!string.IsNullOrWhiteSpace(inboundText))
+        var shoppingEnabledForSearch = _config.GetValue<bool?>("Features:ShoppingEnabled") ?? true;
+        
+        if (shoppingEnabledForSearch && !string.IsNullOrWhiteSpace(inboundText))
         {
             await _browsingFlow.SendSearchResultsAsync(from, conversationId, inboundText.Trim(), DefaultBranchId);
             return;
