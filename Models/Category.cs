@@ -21,4 +21,7 @@ public class Category
 
     [Column("icon_url")]
     public string? IconUrl { get; set; }
+
+     [Column("business_type")]
+    public string? BusinessType { get; set; } // "grocery", "restaurant", or null = shown for any vertical
 }

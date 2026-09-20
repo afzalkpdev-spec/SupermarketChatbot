@@ -5,7 +5,11 @@ using SupermarketBot.Services;
 
 namespace SupermarketBot.Flows;
 
-public class CheckoutFlow
+/// Restaurant-vertical equivalent of CheckoutFlow. Kept as a separate
+/// class (not a modification of CheckoutFlow) so the grocery flow this
+/// project started as remains completely untouched and stable. Switch
+/// between them via appsettings.json "BusinessType": "grocery" | "restaurant".
+public class RestaurantCheckoutFlow
 {
     private readonly WhatsAppService _whatsApp;
     private readonly ConversationService _conversations;
@@ -17,7 +21,7 @@ public class CheckoutFlow
 
     private const decimal DeliveryFee = 10.00m;
 
-    public CheckoutFlow(
+    public RestaurantCheckoutFlow(
         WhatsAppService whatsApp,
         ConversationService conversations,
         CartService carts,
@@ -36,39 +40,63 @@ public class CheckoutFlow
     }
 
     // ---------------------------------------------------------------
-    // Step 1: Delivery or Pickup
+    // Step 1: Dine-in, Takeaway, or Delivery
     // ---------------------------------------------------------------
     public async Task AskFulfillmentTypeAsync(string to, long conversationId)
     {
-        await _whatsApp.SendButtonsAsync(to, "How would you like to receive your order?", new List<WhatsAppButton>
+        await _whatsApp.SendButtonsAsync(to, "How would you like your order?", new List<WhatsAppButton>
         {
+            new() { Id = "FULFILL_DINEIN", Title = "🍽️ Dine-in" },
+            new() { Id = "FULFILL_TAKEAWAY", Title = "🥡 Takeaway" },
             new() { Id = "FULFILL_DELIVERY", Title = "🚚 Delivery" },
-            new() { Id = "FULFILL_PICKUP", Title = "🏬 Pickup" },
         });
 
-        await _conversations.UpdateStateAsync(conversationId, "awaiting_fulfillment_choice");
+        await _conversations.UpdateStateAsync(conversationId, "awaiting_restaurant_fulfillment_choice");
     }
 
     public async Task HandleFulfillmentChoiceAsync(string to, long conversationId, string selectedId)
     {
-        var fulfillmentType = selectedId == "FULFILL_DELIVERY" ? "delivery" : "pickup";
+        var fulfillmentType = selectedId switch
+        {
+            "FULFILL_DINEIN" => "dine_in",
+            "FULFILL_TAKEAWAY" => "takeaway",
+            _ => "delivery"
+        };
 
         await _conversations.UpdateStateAsync(conversationId, "pending",
             new Dictionary<string, object> { ["fulfillment_type"] = fulfillmentType });
 
-        if (fulfillmentType == "delivery")
+        switch (fulfillmentType)
         {
-            await _whatsApp.SendTextAsync(to, "Please type your delivery address (building, street, area):");
-            await _conversations.UpdateStateAsync(conversationId, "awaiting_address");
-        }
-        else
-        {
-            await AskTimeSlotAsync(to, conversationId);
+            case "dine_in":
+                await _whatsApp.SendTextAsync(to, "What's your table number?");
+                await _conversations.UpdateStateAsync(conversationId, "awaiting_table_number");
+                break;
+
+            case "delivery":
+                await _whatsApp.SendTextAsync(to, "Please type your delivery address (building, street, area):");
+                await _conversations.UpdateStateAsync(conversationId, "awaiting_restaurant_address");
+                break;
+
+            default: // takeaway — no address/table needed, straight to payment
+                await AskPaymentMethodAsync(to, conversationId);
+                break;
         }
     }
 
     // ---------------------------------------------------------------
-    // Step 2 (delivery only): capture free-text address
+    // Step 2a (dine-in only): capture table number
+    // ---------------------------------------------------------------
+    public async Task HandleTableNumberTextAsync(string to, long conversationId, string tableNumberText)
+    {
+        await _conversations.UpdateStateAsync(conversationId, "pending",
+            new Dictionary<string, object> { ["table_number"] = tableNumberText.Trim() });
+
+        await AskPaymentMethodAsync(to, conversationId);
+    }
+
+    // ---------------------------------------------------------------
+    // Step 2b (delivery only): capture free-text address
     // ---------------------------------------------------------------
     public async Task HandleAddressTextAsync(string to, long conversationId, long customerId, string addressText)
     {
@@ -77,48 +105,17 @@ public class CheckoutFlow
         await _conversations.UpdateStateAsync(conversationId, "pending",
             new Dictionary<string, object> { ["address_id"] = address.AddressId });
 
-        await AskTimeSlotAsync(to, conversationId);
-    }
-
-    // ---------------------------------------------------------------
-    // Step 3: Time slot
-    // ---------------------------------------------------------------
-    public async Task AskTimeSlotAsync(string to, long conversationId)
-    {
-        await _whatsApp.SendButtonsAsync(to, "When would you like it?", new List<WhatsAppButton>
-        {
-            new() { Id = "TIME_ASAP", Title = "⚡ ASAP" },
-            new() { Id = "TIME_TODAY", Title = "🕓 Today, 4-6 PM" },
-            new() { Id = "TIME_TOMORROW", Title = "📅 Tomorrow AM" },
-        });
-
-        await _conversations.UpdateStateAsync(conversationId, "awaiting_time_slot");
-    }
-
-    public async Task HandleTimeSlotChoiceAsync(string to, long conversationId, string selectedId)
-    {
-        var slotLabel = selectedId switch
-        {
-            "TIME_ASAP" => "ASAP",
-            "TIME_TODAY" => "Today, 4-6 PM",
-            "TIME_TOMORROW" => "Tomorrow",
-            _ => "ASAP"
-        };
-
-        await _conversations.UpdateStateAsync(conversationId, "pending",
-            new Dictionary<string, object> { ["time_slot"] = slotLabel });
-
         await AskPaymentMethodAsync(to, conversationId);
     }
 
     // ---------------------------------------------------------------
-    // Step 4: Payment method
+    // Step 3: Payment method
     // ---------------------------------------------------------------
     public async Task AskPaymentMethodAsync(string to, long conversationId)
     {
         await _whatsApp.SendButtonsAsync(to, "How would you like to pay?", new List<WhatsAppButton>
         {
-            new() { Id = "PAY_COD", Title = "💵 Cash on Delivery" },
+            new() { Id = "PAY_COD", Title = "💵 Cash" },
             // TODO: add PAY_CARD / PAY_WHATSAPP once a payment gateway is wired up
         });
 
@@ -126,36 +123,44 @@ public class CheckoutFlow
     }
 
     // ---------------------------------------------------------------
-    // Step 5: Finalize — create order, record payment, clear cart
+    // Step 4: Finalize — create order, record payment, clear cart
     // ---------------------------------------------------------------
     public async Task FinalizeOrderAsync(string to, long conversationId, long customerId, int branchId)
     {
         var context = await GetContextAsync(conversationId);
 
         var cartId = context["cart_id"]?.GetValue<long>();
-        var fulfillmentType = context["fulfillment_type"]?.GetValue<string>() ?? "delivery";
+        var fulfillmentType = context["fulfillment_type"]?.GetValue<string>() ?? "takeaway";
         var addressId = context.ContainsKey("address_id") ? context["address_id"]?.GetValue<long>() : null;
+        var tableNumber = context.ContainsKey("table_number") ? context["table_number"]?.GetValue<string>() : null;
         var deliveryFee = fulfillmentType == "delivery" ? DeliveryFee : 0m;
 
         if (cartId is null)
         {
-            await _whatsApp.SendTextAsync(to, "Something went wrong finding your cart. Please start again by typing 'hi'.");
+            await _whatsApp.SendTextAsync(to, "Something went wrong finding your order. Please start again by typing 'hi'.");
             return;
         }
 
         var order = await _orders.CreateOrderFromCartAsync(
-            customerId, cartId.Value, branchId, fulfillmentType, addressId, deliveryFee);
+            customerId, cartId.Value, branchId, fulfillmentType, addressId, deliveryFee, tableNumber);
 
         await _payments.RecordCashOnDeliveryAsync(order.OrderId, order.TotalAmount, order.Currency);
         await _carts.ClearCartAsync(cartId.Value);
 
+        var typeLabel = fulfillmentType switch
+        {
+            "dine_in" => $"Dine-in 🍽️ (Table {tableNumber})",
+            "takeaway" => "Takeaway 🥡",
+            _ => "Delivery 🚚"
+        };
+
         var confirmation =
             $"✅ *Order Confirmed!*\n\n" +
             $"Order #: {order.OrderNumber}\n" +
-            $"Type: {(fulfillmentType == "delivery" ? "Delivery 🚚" : "Pickup 🏬")}\n" +
+            $"Type: {typeLabel}\n" +
             $"Total: {order.Currency} {order.TotalAmount:0.00}\n" +
-            $"Payment: Cash on Delivery\n\n" +
-            $"We'll notify you as your order progresses. Thank you for choosing us!";
+            $"Payment: Cash\n\n" +
+            $"We'll notify you as your order progresses. Thank you!";
 
         await _whatsApp.SendTextAsync(to, confirmation);
         await _conversations.UpdateStateAsync(conversationId, "idle", resetContext: true);
