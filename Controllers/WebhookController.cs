@@ -17,6 +17,7 @@ public class WebhookController : ControllerBase
     private readonly CartFlow _cartFlow;
     private readonly CheckoutFlow _checkoutFlow;
     private readonly OrderTrackingFlow _orderTrackingFlow;
+    private readonly BotSettingsService _settings;
     private readonly WhatsAppService _whatsApp;
     private readonly ILogger<WebhookController> _logger;
 
@@ -31,6 +32,7 @@ public class WebhookController : ControllerBase
         CartFlow cartFlow,
         CheckoutFlow checkoutFlow,
         OrderTrackingFlow orderTrackingFlow,
+        BotSettingsService settings,
         WhatsAppService whatsApp,
         ILogger<WebhookController> logger)
     {
@@ -42,6 +44,7 @@ public class WebhookController : ControllerBase
         _cartFlow = cartFlow;
         _checkoutFlow = checkoutFlow;
         _orderTrackingFlow = orderTrackingFlow;
+        _settings = settings;
         _whatsApp = whatsApp;
         _logger = logger;
     }
@@ -243,8 +246,16 @@ public class WebhookController : ControllerBase
                 return;
 
             case "MENU_TRACK":
+            {
+                var orderTrackingEnabled = await _settings.GetFlagAsync(BotSettingKeys.OrderTrackingEnabled);
+                if (!orderTrackingEnabled)
+                {
+                    await _whatsApp.SendTextAsync(from, "Order tracking isn't available yet — check back soon!");
+                    return;
+                }
                 await _orderTrackingFlow.ShowLatestOrderStatusAsync(from, customerId);
                 return;
+            }
 
             case "MENU_SUPPORT":
                 // TODO: build support ticket flow — insert into support_tickets
@@ -327,8 +338,7 @@ public class WebhookController : ControllerBase
         // ---- Free-text that isn't a recognized command: treat as a product search ----
         // This must come after all button/list handling above (selectedId is always
         // null for typed text, so it won't intercept any interactive replies).
-        var shoppingEnabledForSearch = _config.GetValue<bool?>("Features:ShoppingEnabled") ?? true;
-        
+        var shoppingEnabledForSearch = await _settings.GetFlagAsync(BotSettingKeys.ShoppingEnabled, defaultValue: true);
         if (shoppingEnabledForSearch && !string.IsNullOrWhiteSpace(inboundText))
         {
             await _browsingFlow.SendSearchResultsAsync(from, conversationId, inboundText.Trim(), DefaultBranchId);

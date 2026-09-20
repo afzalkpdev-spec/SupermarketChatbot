@@ -24,6 +24,7 @@ public class AppDbContext : DbContext
     public DbSet<AdminUser> AdminUsers => Set<AdminUser>();
 
     public DbSet<Offer> Offers => Set<Offer>();
+    public DbSet<BotSetting> BotSettings => Set<BotSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

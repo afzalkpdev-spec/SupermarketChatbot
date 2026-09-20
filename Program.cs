@@ -67,6 +67,7 @@ builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<AddressService>();
 builder.Services.AddScoped<OrderService>();
+builder.Services.AddScoped<BotSettingsService>();
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<OrderStatusService>();
 builder.Services.AddScoped<GreetingFlow>();

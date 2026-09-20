@@ -9,13 +9,15 @@ public class GreetingFlow
     private readonly CustomerService _customers;
     private readonly IConfiguration _config;
     private readonly OfferService _offers;
+    private readonly BotSettingsService _settings;
 
-    public GreetingFlow(WhatsAppService whatsApp, ConversationService conversations, CustomerService customers, OfferService offers, IConfiguration config)
+    public GreetingFlow(WhatsAppService whatsApp, ConversationService conversations, CustomerService customers, OfferService offers,BotSettingsService settings, IConfiguration config)
     {
         _whatsApp = whatsApp;
         _conversations = conversations;
         _customers = customers;
         _offers = offers;
+        _settings = settings;
         _config = config;
     }
 
@@ -26,8 +28,8 @@ public class GreetingFlow
     /// to false to turn this off entirely without removing the config.
     public async Task SendMainMenuAsync(string to, long conversationId, long customerId)
     {
-        var offersEnabled = _config.GetValue<bool?>("OfferImages:Enabled") ?? true;
-
+        
+        var offersEnabled = await _settings.GetFlagAsync(BotSettingKeys.OffersEnabled);
         if (offersEnabled)
         {
             var repeatIntervalHours = _config.GetValue<double?>("OfferImages:RepeatIntervalHours") ?? 24;
@@ -52,7 +54,7 @@ public class GreetingFlow
             }
         }
 
-        var shoppingEnabled = _config.GetValue<bool?>("Features:ShoppingEnabled") ?? true;
+        var shoppingEnabled = await _settings.GetFlagAsync(BotSettingKeys.ShoppingEnabled, defaultValue: true);
         if (!shoppingEnabled)
         {
             // Images-only mode: no menu, no state change — leave the
