@@ -76,6 +76,7 @@ public class WebhookController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Receive([FromBody] JsonElement body)
     {
+         _logger.LogInformation("WEBHOOK POST RECEIVED: {Body}", body.ToString());
         // NOTE: awaited directly rather than fire-and-forget, because
         // scoped services (like AppDbContext) get disposed as soon as this
         // request ends — a detached background task would crash mid-query.
@@ -83,6 +84,8 @@ public class WebhookController : ControllerBase
         // a queue (e.g. a channel, Hangfire, or a message broker) and
         // return 200 immediately, processing the queue separately.
         await ProcessEventAsync(body);
+
+        _logger.LogInformation("WEBHOOK PROCESSING FINISHED");
         return Ok();
     }
 
@@ -110,6 +113,7 @@ public class WebhookController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error handling incoming webhook event");
+            throw;
         }
     }
 
