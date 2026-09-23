@@ -25,6 +25,9 @@ public class Order
     [Column("fulfillment_type")]
     public string FulfillmentType { get; set; } = "delivery"; // delivery, pickup
 
+    [Column("table_number")]
+    public string? TableNumber { get; set; } // restaurant dine-in only; null otherwise
+
     [Column("subtotal")]
     public decimal Subtotal { get; set; }
 

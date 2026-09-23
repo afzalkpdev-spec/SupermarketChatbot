@@ -17,7 +17,9 @@ public class WebhookController : ControllerBase
     private readonly CartFlow _cartFlow;
     private readonly CheckoutFlow _checkoutFlow;
     private readonly OrderTrackingFlow _orderTrackingFlow;
+    private readonly RestaurantCheckoutFlow _restaurantCheckoutFlow;
     private readonly BotSettingsService _settings;
+    private readonly AppConfigService _appConfig;
     private readonly WhatsAppService _whatsApp;
     private readonly ILogger<WebhookController> _logger;
 
@@ -32,7 +34,9 @@ public class WebhookController : ControllerBase
         CartFlow cartFlow,
         CheckoutFlow checkoutFlow,
         OrderTrackingFlow orderTrackingFlow,
+        RestaurantCheckoutFlow restaurantCheckoutFlow,
         BotSettingsService settings,
+        AppConfigService appConfig,
         WhatsAppService whatsApp,
         ILogger<WebhookController> logger)
     {
@@ -44,7 +48,9 @@ public class WebhookController : ControllerBase
         _cartFlow = cartFlow;
         _checkoutFlow = checkoutFlow;
         _orderTrackingFlow = orderTrackingFlow;
+        _restaurantCheckoutFlow = restaurantCheckoutFlow;
         _settings = settings;
+        _appConfig = appConfig;
         _whatsApp = whatsApp;
         _logger = logger;
     }
@@ -233,6 +239,18 @@ public class WebhookController : ControllerBase
             return;
         }
 
+        if (currentState == "awaiting_restaurant_address" && !string.IsNullOrWhiteSpace(inboundText))
+        {
+            await _restaurantCheckoutFlow.HandleAddressTextAsync(from, conversationId, customerId, inboundText.Trim());
+            return;
+        }
+
+        if (currentState == "awaiting_table_number" && !string.IsNullOrWhiteSpace(inboundText))
+        {
+            await _restaurantCheckoutFlow.HandleTableNumberTextAsync(from, conversationId, inboundText.Trim());
+            return;
+        }
+
         // ---- Greeting shortcut (only when not mid-flow on free text) ----
         if (inboundText is not null &&
             System.Text.RegularExpressions.Regex.IsMatch(inboundText.Trim(), "^(hi|hello|hey|start|menu)$",
@@ -267,7 +285,10 @@ public class WebhookController : ControllerBase
                 return;
 
             case "CART_CHECKOUT":
-                await _checkoutFlow.AskFulfillmentTypeAsync(from, conversationId);
+                if (await _appConfig.IsRestaurantAsync())
+                    await _restaurantCheckoutFlow.AskFulfillmentTypeAsync(from, conversationId);
+                else
+                    await _checkoutFlow.AskFulfillmentTypeAsync(from, conversationId);
                 return;
 
             case "CART_REMOVE":
@@ -284,17 +305,28 @@ public class WebhookController : ControllerBase
 
             case "FULFILL_DELIVERY":
             case "FULFILL_PICKUP":
-                await _checkoutFlow.HandleFulfillmentChoiceAsync(from, conversationId, selectedId);
+            case "FULFILL_DINEIN":
+            case "FULFILL_TAKEAWAY":
+                if (await _appConfig.IsRestaurantAsync())
+                    await _restaurantCheckoutFlow.HandleFulfillmentChoiceAsync(from, conversationId, selectedId);
+                else
+                    await _checkoutFlow.HandleFulfillmentChoiceAsync(from, conversationId, selectedId!);
                 return;
 
             case "TIME_ASAP":
             case "TIME_TODAY":
             case "TIME_TOMORROW":
+                // Restaurant flow doesn't currently use time slots (dine-in/takeaway
+                // skip straight to payment, delivery is ASAP-only for now) — this
+                // case only fires for the grocery flow.
                 await _checkoutFlow.HandleTimeSlotChoiceAsync(from, conversationId, selectedId);
                 return;
 
             case "PAY_COD":
-                await _checkoutFlow.FinalizeOrderAsync(from, conversationId, customerId, DefaultBranchId);
+                if (await _appConfig.IsRestaurantAsync())
+                    await _restaurantCheckoutFlow.FinalizeOrderAsync(from, conversationId, customerId, DefaultBranchId);
+                else
+                    await _checkoutFlow.FinalizeOrderAsync(from, conversationId, customerId, DefaultBranchId);
                 return;
         }
 
@@ -342,6 +374,8 @@ public class WebhookController : ControllerBase
         // ---- Free-text that isn't a recognized command: treat as a product search ----
         // This must come after all button/list handling above (selectedId is always
         // null for typed text, so it won't intercept any interactive replies).
+        // Gated behind the DB-backed ShoppingEnabled flag too — otherwise a customer
+        // could bypass "images only" mode just by typing a product name directly.
         var shoppingEnabledForSearch = await _settings.GetFlagAsync(BotSettingKeys.ShoppingEnabled, defaultValue: true);
         if (shoppingEnabledForSearch && !string.IsNullOrWhiteSpace(inboundText))
         {

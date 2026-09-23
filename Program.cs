@@ -1,10 +1,12 @@
 using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using SupermarketBot.Data;
 using SupermarketBot.Flows;
 using SupermarketBot.Services;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
+
+									 
 var builder = WebApplication.CreateBuilder(args);
 
 // Postgres via EF Core / Npgsql
@@ -49,8 +51,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidAudience = builder.Configuration["Jwt:Audience"],
             ValidateIssuerSigningKey = true,
-            //IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
-            IssuerSigningKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(jwtSecret)),
+			//IssuerSigningKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(jwtSecret)),																 
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1)
         };
@@ -67,13 +69,18 @@ builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<AddressService>();
 builder.Services.AddScoped<OrderService>();
-builder.Services.AddScoped<BotSettingsService>();
+												 
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<OrderStatusService>();
+builder.Services.AddScoped<OfferService>();
+builder.Services.AddScoped<BotSettingsService>();
+builder.Services.AddScoped<AppConfigService>();
+builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<GreetingFlow>();
 builder.Services.AddScoped<BrowsingFlow>();
 builder.Services.AddScoped<CartFlow>();
 builder.Services.AddScoped<CheckoutFlow>();
+builder.Services.AddScoped<RestaurantCheckoutFlow>();
 builder.Services.AddScoped<OrderTrackingFlow>();
 
 // Admin portal services
@@ -81,8 +88,8 @@ builder.Services.AddScoped<AdminAuthService>();
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddScoped<AdminOrderService>();
 
-builder.Services.AddScoped<OfferService>();
-builder.Services.AddScoped<CloudinaryService>();
+										   
+												
 
 builder.Services.AddControllers();
 

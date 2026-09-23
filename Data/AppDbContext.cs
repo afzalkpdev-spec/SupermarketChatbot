@@ -25,7 +25,8 @@ public class AppDbContext : DbContext
 
     public DbSet<Offer> Offers => Set<Offer>();
     public DbSet<BotSetting> BotSettings => Set<BotSetting>();
-
+    public DbSet<AppConfig> AppConfig => Set<AppConfig>();
+ 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Your tables already exist (created directly via SQL), so this

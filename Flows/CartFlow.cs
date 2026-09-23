@@ -7,12 +7,14 @@ public class CartFlow
     private readonly WhatsAppService _whatsApp;
     private readonly ConversationService _conversations;
     private readonly CartService _carts;
+    private readonly AppConfigService _appConfig;
 
-    public CartFlow(WhatsAppService whatsApp, ConversationService conversations, CartService carts)
+    public CartFlow(WhatsAppService whatsApp, ConversationService conversations, CartService carts, AppConfigService appConfig)
     {
         _whatsApp = whatsApp;
         _conversations = conversations;
         _carts = carts;
+        _appConfig = appConfig;
     }
 
     public async Task AddProductAndShowCartAsync(string to, long conversationId, long customerId, int branchId, long productId)
@@ -42,21 +44,28 @@ public class CartFlow
     public async Task ShowCartSummaryAsync(string to, long conversationId, long cartId)
     {
         var summary = await _carts.GetCartSummaryAsync(cartId);
+        var isRestaurant = await _appConfig.IsRestaurantAsync();
 
         if (summary.Lines.Count == 0)
         {
-            await _whatsApp.SendTextAsync(to, "Your cart is empty. Tap 🛒 Start Shopping to add items.");
+            var emptyMessage = isRestaurant
+                ? "Your order is empty. Tap 🍽️ Start Ordering to add items."
+                : "Your cart is empty. Tap 🛒 Start Shopping to add items.";
+            await _whatsApp.SendTextAsync(to, emptyMessage);
             await _conversations.UpdateStateAsync(conversationId, "main_menu");
             return;
         }
 
+        var heading = isRestaurant ? "🍽️ *Your Order*" : "🛒 *Your Cart*";
         var lines = summary.Lines.Select(l => $"{l.Quantity}x {l.ProductName} — {summary.Currency} {l.LineTotal:0.00}");
-        var body = "🛒 *Your Cart*\n\n" + string.Join("\n", lines) + $"\n\n*Total: {summary.Currency} {summary.Total:0.00}*";
+        var body = $"{heading}\n\n" + string.Join("\n", lines) + $"\n\n*Total: {summary.Currency} {summary.Total:0.00}*";
+
+        var keepGoingTitle = isRestaurant ? "🍽️ Keep Ordering" : "🛍️ Keep Shopping";
 
         await _whatsApp.SendButtonsAsync(to, body, new List<WhatsAppButton>
         {
             new() { Id = "CART_CHECKOUT", Title = "✅ Checkout" },
-            new() { Id = "MENU_SHOP", Title = "🛍️ Keep Shopping" },
+            new() { Id = "MENU_SHOP", Title = keepGoingTitle },
             new() { Id = "CART_REMOVE", Title = "🗑️ Remove Item" },
         });
 

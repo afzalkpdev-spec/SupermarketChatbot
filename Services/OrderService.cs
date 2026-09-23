@@ -19,7 +19,8 @@ public class OrderService
         int branchId,
         string fulfillmentType,
         long? addressId,
-        decimal deliveryFee)
+        decimal deliveryFee,
+        string? tableNumber = null)
     {
         var cartItems = await (
             from ci in _db.CartItems
@@ -41,6 +42,7 @@ public class OrderService
             BranchId = branchId,
             AddressId = addressId,
             FulfillmentType = fulfillmentType,
+            TableNumber = tableNumber,
             Subtotal = subtotal,
             DiscountAmount = 0,
             DeliveryFee = deliveryFee,
